@@ -112,7 +112,7 @@ author:
       icon: "fas fa-fw fa-envelope-square"
       url: "mailto:shenzhu0127@gmail.com"
     - label: "LinkedIn"
-      icon: "fa fa-linkedin-square"
+      icon: "fab fa-fw fa-linkedin-in"
       url: "https://www.linkedin.com/in/shen-zhu-93652484/"
     - label: "Website"
       icon: "fas fa-fw fa-link"
