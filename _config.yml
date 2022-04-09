@@ -104,7 +104,7 @@ analytics:
 author:
   name             : "Shen Zhu"
   avatar           : # path of avatar image, e.g. "/assets/images/bio-photo.jpg"
-  bio              : "Software Engineer."
+  bio              : "Software Engineer"
   location         : "San Francisco, CA"
   email            :
   links:
@@ -112,7 +112,7 @@ author:
       icon: "fas fa-fw fa-envelope-square"
       url: "mailto:shenzhu0127@gmail.com"
     - label: "LinkedIn"
-      icon: "fab fa-fw fa-linkedin-square"
+      icon: "fa fa-linkedin-square"
       url: "https://www.linkedin.com/in/shen-zhu-93652484/"
     - label: "Website"
       icon: "fas fa-fw fa-link"
