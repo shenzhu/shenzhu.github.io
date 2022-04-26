@@ -1,7 +1,8 @@
 ---
 title: "由一个Kafka Partition问题说开去"
 tags:
-  - Kafka, Flink
+  - Kafka
+  - Flink
 ---
 
 ## 1. 问题
