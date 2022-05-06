@@ -4,6 +4,8 @@ tags:
   - 分布式系统
 ---
 
+记录一下看过的分布式系统资料
+
 ### 概念
 * 时间
   * [Lamport Clock](https://martinfowler.com/articles/patterns-of-distributed-systems/lamport-clock.html): 由于NTP不完全准确，因此不同server甚至是同一server的时间都是无法直接比较的，因此我们可以使用logical clock(Lamport clock)。基本思路是每个server维护Lamport clock，server在写的时候increment Lamport clock，并且将增加后的clock返回给client，这样client在多次写的时候这些行为都有order。两个限制 => 1. partial order; 2. 无法使用真实时间推断
@@ -13,3 +15,7 @@ tags:
 ### 分布式数据库
 * Spanner
   * [Martin Kleppmann on Spanner](https://www.youtube.com/watch?v=oeycOVX70aE)：DDIA的作者高屋建瓴介绍spanner，侧重于spanner中事务的实现以及TrueTime API带来的causality consistency
+* TiDB
+  * [三篇文章了解 TiDB 技术内幕 - 说存储](https://pingcap.com/zh/blog/tidb-internal-1): TiKV怎样以key-value的形式高效稳定存储数据
+  * [三篇文章了解 TiDB 技术内幕 - 说计算](https://pingcap.com/zh/blog/tidb-internal-2/): TiDB怎样实现关系模型与key-value模型的映射以及TiDB架构
+  * [三篇文章了解 TiDB 技术内幕 - 谈调度](https://pingcap.com/zh/blog/tidb-internal-3): PD的作用以及原理
