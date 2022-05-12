@@ -12,6 +12,12 @@ tags:
   * [Hybrid Logical Clock](https://martinfowler.com/articles/patterns-of-distributed-systems/hybrid-clock.html): 同时使用真实时间和逻辑时间，Hybrid Logical Clock也可以通过48位真实时间+16位逻辑时间的方法转化为真实时间，解决了Lamport Clock的部分问题
   * [分布式系统的时间](https://www.jianshu.com/p/8500882ab38c): 介绍分布式系统中时间的概念以及常用的几种方法，Logical Clock, TrueTime API, Hybrid Logic Clock和Timestamp Oracle
 
+### 分布式事务
+* Percolator
+  * [Percolator论文](https://research.google/pubs/pub36726/)
+  * [Percolator论文阅读笔记](http://loopjump.com/percolator_paper_note/): 比较详细地描述了Percolator中对2PC的实现以及oberserver机制
+  * [Percolator in TiKV](https://tikv.org/deep-dive/distributed-transaction/percolator/): 介绍Percolator模型以及TiKV的实现
+
 ### 分布式数据库
 * Spanner
   * [Martin Kleppmann on Spanner](https://www.youtube.com/watch?v=oeycOVX70aE)：DDIA的作者高屋建瓴介绍spanner，侧重于spanner中事务的实现以及TrueTime API带来的causality consistency
