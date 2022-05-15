@@ -16,7 +16,11 @@ tags:
 * Percolator
   * [Percolator论文](https://research.google/pubs/pub36726/)
   * [Percolator论文阅读笔记](http://loopjump.com/percolator_paper_note/): 比较详细地描述了Percolator中对2PC的实现以及oberserver机制
+  * [Google Percolator 的事务模型](http://andremouche.github.io/transaction/percolator.html)
   * [Percolator in TiKV](https://tikv.org/deep-dive/distributed-transaction/percolator/): 介绍Percolator模型以及TiKV的实现
+  * [Optimized Percolator in TiKV](https://tikv.org/deep-dive/distributed-transaction/optimized-percolator/): 提到了对Percolator的几种优化，parallel prewrite，short value in write column和point read without timestamp
+* Two-phase Commit
+  * [分布式事务：两阶段提交与三阶段提交](https://segmentfault.com/a/1190000012534071)
 
 ### 分布式数据库
 * Spanner
