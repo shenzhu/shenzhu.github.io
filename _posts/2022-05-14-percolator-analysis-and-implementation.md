@@ -1,5 +1,5 @@
 ---
-title: "Percolator事务算法的分析与实现"
+title: "Percolator事务模型的分析与实现"
 tags:
   - 分布式系统
 ---
