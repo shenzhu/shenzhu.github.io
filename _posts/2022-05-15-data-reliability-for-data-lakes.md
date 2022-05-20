@@ -2,7 +2,7 @@
 title: "Data Reliability for Data Lakes"
 tags:
   - 分布式系统
-  - 大数据
+  - 数据系统
 ---
 
 这篇文章来自于Databricks工程师Michael Armbrust的[演讲](https://www.youtube.com/watch?v=whaV6bMaf5o)
