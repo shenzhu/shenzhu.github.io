@@ -174,7 +174,7 @@ Validate不仅仅是parse那么简单，Calcite在这一过程中需要知道SQL
 ```
 
 结果如下
-```
+```sql
 SELECT `A`.`ID`, `A`.`NAME`, SUM(`B`.`SCORE1` * 0.7 + `B`.`SCORE2` * 0.3) AS `TOTAL_SCORE`
 FROM `STUDENT` AS `A`
 INNER JOIN `EXAM_RESULT` AS `B` ON `A`.`id` = `B`.`student_id`
@@ -228,38 +228,38 @@ LogicalProject(ID=[$0], NAME=[$1], TOTAL_SCORE=[$2])
 基于关系代数的等价变化，我们可以对logical plan进行优化。既然要进行优化，那么就要提供一个标准，我们是根据什么标准进行优化呢？Calcite中有两种优化策略
 
 **基于规则的优化(RBO)**
-```
+
 基于规则的优化器(Rule-Based Optimizer, RBO)：根据优化规则对关系表达式进行转换，这里的转换是说一个关系表达式经过优化规则后会变成另外一个关系表达式，同时原有表达式会被裁剪掉，经过一系列转换后生成最终的执行计划
 
 RBO 中包含了一套有着严格顺序的优化规则，同样一条SQL，无论读取的表中数据是怎么样的，最后生成的执行计划都是一样的。同时，在RBO中SQL写法的不同很有可能影响最终的执行计划，从而影响执行计划的性能
-```
+
 
 **基于成本的优化(CBO)**
-```
+
 基于代价的优化器(Cost-Based Optimizer, CBO)：根据优化规则对关系表达式进行转换，这里的转换是说一个关系表达式经过优化规则后会生成另外一个关系表达式，同时原有表达式也会保留，经过一系列转换后会生成多个执行计划，然后CBO会根据统计信息和代价模型(Cost Model)计算每个执行计划的Cost，从中挑选Cost最小的执行计划
 
 由上可知，CBO中有两个依赖：统计信息和代价模型。统计信息的准确与否，代价模型的合理与否都会影响CBO选择最优计划。从上述描述可知，CBO是优于RBO的，原因是RBO是一种只认规则，对数据不敏感的呆板的优化器，而在实际过程中，数据往往是有变化的，通过RBO生成的执行计划很有可能不是最优的。事实上目前各大数据库和大数据计算引擎都倾向于使用CBO，但是对于流式计算引擎来说，使用CBO还是有很大难度的，因为并不能提前预知数据量等信息，这会极大地影响优化效果，CBO主要还是应用在离线的场景。
-```
+
 
 #### 3.2.1. Planner
 Calcite提供了两种planner: HepPlanner和VolcanoPlanner
 
 **HepPlanner**
-```
+
 1. HepPlanner is a heuristic optimizer similar to Spark’s optimizer，与 spark 的优化器相似，HepPlanner 是一个 heuristic 优化器
 2. Applies all matching rules until none can be applied：将会匹配所有的 rules 直到一个 rule 被满足
 3. Heuristic optimization is faster than cost- based optimization：它比 CBO 更快
 4. Risk of infinite recursion if rules make opposing changes to the plan：如果没有每次都不匹配规则，可能会有无限递归风险
-```
+
 
 **VolcanoPlanner**
-```
+
 1. VolcanoPlanner is a cost-based optimizer：VolcanoPlanner是一个CBO优化器
 2. Applies matching rules iteratively, selecting the plan with the cheapest cost on each iteration: 迭代地应用 rules，直到找到cost最小的plan
 3. Costs are provided by relational expressions；
 4. Not all possible plans can be computed：不会计算所有可能的计划
 5. Stops optimization when the cost does not significantly improve through a determinable number of iterations: 根据已知的情况，如果下面的迭代不能带来提升时，这些计划将会停止优化
-```
+
 
 #### 3.2.2. 优化
 ```java
