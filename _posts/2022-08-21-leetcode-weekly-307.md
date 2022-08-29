@@ -1,5 +1,5 @@
 ---
-title: "LeetCode Weekly Contest 357"
+title: "LeetCode Weekly Contest 307"
 tags:
   - LeetCode
   - 算法
@@ -171,7 +171,7 @@ class Solution:
 ```
 
 比赛的时候也想到了先把所有的正数加起来，然后依次减去最小的正数或者加上最大的负数，并且使用heap维护顺序，但是在产生下一个较小数字的时候卡住了，没有想到有效的方法，之后看解答这张图解释地很清楚
-![Picture](../assets/images/2022-08-21-leetcode-weekly-357-1.png)
+![Picture](../assets/images/2022-08-21-leetcode-weekly-307-1.png)
 
 代码如下
 ```python
