@@ -7,7 +7,7 @@ tags:
 
 ### 2404. Most Frequent Even Element
 签到题，直接用dict做
-```python3
+```python
 class Solution:
     def mostFrequentEven(self, nums: List[int]) -> int:
         if not nums:
@@ -27,7 +27,7 @@ class Solution:
 
 ### 2405. Optimal Partition of String
 同样用dict，每次遇到重复的character就重新计算
-```python3
+```python
 class Solution:
     def partitionString(self, s: str) -> int:
         if not s:
@@ -47,7 +47,7 @@ class Solution:
 
 ### 2406. Divide Intervals Into Minimum Number of Groups
 和meeting rooms很像，使用heap按照group的end升序排列，当想要加入新的interval时，先把不冲突的全拿出来
-```python3
+```python
 class Solution:
     def minGroups(self, intervals: List[List[int]]) -> int:
         if not intervals:
@@ -69,7 +69,7 @@ class Solution:
 
 ### 2407. Longest Increasing Subsequence II
 一开始用了DP，但是超时了，比赛完之后才发现要用线段树，即使是有线段树的想法，这道题的思路也不是很容易，可以参考[这个链接](https://leetcode.com/problems/longest-increasing-subsequence-ii/discuss/2560085/Python-Explanation-with-pictures-Segment-Tree)。另外这道题目的线段树模板要背下来，核心是`update`和`query`函数，可以对它们变换来处理max, min, sum的情况，要注意的是线段树从1开始，所以这道题目对于1要做一下特殊处理
-```python3
+```python
 class Solution:
     def update(self, segs, p, l, r, idx, val):
         if l == r:
