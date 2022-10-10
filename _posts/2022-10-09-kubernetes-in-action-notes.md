@@ -55,3 +55,78 @@ Kubernetes由两部分组成，control plane和worker notes
     - Kubernetes Service Proxy(kube-proxy): Load-balances network traffic between application components
 
 To run an application in Kubernetes, you first need to package it up into one or more container images, push those images to an image registry, and then post a description of your app to the Kubernetes API server. Kubernetes continuously makes sure that the deployed state of the application always matches the description you provided
+
+# 2. First steps with Docker and Kubernetes
+
+## 2.1. Creating, running, and sharing a container image
+大概有以下五个步骤
+
+1. Install Docker and run your first "Hello world" container
+2. Create a trivial Node.js app that you’ll later deploy in Kubernetes
+3. Package the app into a container image so you can then run it as an isolated
+container
+4. Run a container based on the image
+5. Push the image to Docker Hub so that anyone anywhere can run it
+
+具体细节不再详述，只记录一些需要关注的点和常用的docker command
+```
+运行某个Docker image，不指定version的话默认使用latest tag
+docker run <image>:<tag>
+```
+Dockerfile包含一系列指令来build Docker image
+```
+docker build -t kubia .
+```
+Docker build process并不发生在Docker client，整个directory的内容都会被上传到Docker daemon并且build image. Docker image并不是一个single, big, binary blob, but is composed of mutiple layers，在build image的时候，a new layer is created for each individual command in the Dockerfile
+```
+List locally stored images
+docker images
+```
+```
+docker run --name kubia-container -p 8080:8080 -d kubia
+```
+以上命令告诉Docker to run a new container called `kubia-container` from the `kubia` image，`-d`指的是detached mode，在background运行，`-p`指的是将本机的8080端口映射到container里的8080端口
+```
+List running containers
+docker ps
+
+Get additional information about a container
+docker inspect kubia-container
+```
+```
+docker exec -it kubia-container bash
+```
+上面的命令will run `bash` inside the existing `kubia-container` container, `bash`进程会使用与这个container进程相同的Linux namespace，`-i`保证STDIN is kept open，需要使用它来输入command，`-t`会allocate a pseudo terminal(TTY)
+```
+docker stop kubia-container
+docker ps -a
+docker rm kubia-container
+```
+在将Docker image push到repository之前要在之前加上namespace(比如下面的luksa或者shenzhu)
+```
+docker tag kubia luksa/kubia
+docker push luksa/kubia
+docker run -p 8080:8080 -d luksa/kubia
+```
+
+## 2.2. Setting up a Kubernetes cluster
+
+介绍了使用minikube和在GKE上搭建Kubernetes，具体细节不再赘述
+```
+kubectl cluster-info
+kubectl get nodes
+kubectl describe node <node name>
+```
+
+## 2.3. Running your first app on Kubernetes
+最简单的方法是使用`kubectl run`命令
+```
+kubectl run kubia --image=luksa/kubia --port=8080 --generator=run/v1
+```
+
+Kubernetes并不直接与container打交道，it uses the concept of multiple co-located containers, this group of containers is called a Pod.  A pod is a group of one or more tightly related containers that will always run together on the same worker node and in the same Linux namespace(s). Each pod is like a separate logical machine with its own IP, hostname, processes, and so on, running a single application. All the containers in a pod will appear to be running on the same logical machine
+
+```
+kubectl get pods -o wide
+kubectl describe pod kubia-hczji
+```
