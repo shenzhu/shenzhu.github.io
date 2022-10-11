@@ -130,3 +130,87 @@ Kubernetes并不直接与container打交道，it uses the concept of multiple co
 kubectl get pods -o wide
 kubectl describe pod kubia-hczji
 ```
+
+# 3. Pods: running containers in Kubernetes
+
+## 3.1. Intorducing pods
+
+Pod is a co-located group of containers and represents he basic building block in Kubernetes. Instead of deploying containers individually, you always deploy and operate on a pod of containers
+ 
+Containers are designed to run only a single process per container, container的设计是每个container只跑一个process, 不然多个process在一起要分别考虑它们的autoscaling, failure-recovery等问题，会比较麻烦. Because you're not supposed to group multiple processes into a single container, it's obvious you need another higher-level construct that will allow you to bind containers together and manage them as a single unit. Kubernetes通过安排同一个pod里的container共享Linux namespace(包括Network和UTS namespace等等), 从而达到共享资源的效果, 也就是partial isolation between containers of the same pod
+
+Pods are logical hosts and behave much like physical hosts or VMs in the non-container world. Processes running in the same pod are like processes running on the same physical or virtual machine, except that each process is encapsulated in a container
+
+Pods are relatively lightweight, you can have as many as you need without incurring almost any overhead
+
+A pod is also the basic unit of scaling, Kubernetes can't horizontally scale individual containers
+
+## 3.2. Creating pods from YAML or JSON descriptors
+```
+kubectl get po kubia-zxzij -o yaml
+```
+Pod definition包含的内容
+- Kubernetes API version
+- Type of resource the YAML is describing
+- Metadata: Includes the name, namespace, labels and other information about the pod
+- Spec: Contains the actual description of the pod's contents
+- Status: Contains the current information about the running pod, read-only
+```
+kubectl explain pods
+kubectl create -f kubia-manual.yaml
+kubectl logs kubia-manual(pod name) -c kubia(container name)
+kubectl port-forward kubia-manual 8888:8080
+```
+
+## 3.3. Organizing pods with labels
+
+As the number of pods increases, the need for categorizing them into subsets becomes more and more evident
+
+Labels are a simple, yet incredibly powerful, Kubernetes feature for organizing not only pods, but all other Kubernetes resources. A label is an arbitrary key-value pair you attach to a resource, which is then utilized when selecting resources using label selectors
+```
+kubectl get pod --show-labels
+kubectl get pod -L creation_method,env
+```
+
+## 3.4. Listing subsets of pods through label selectors
+
+Label selectors allow you to select a subset of pods tagged with certain labels and perform an operation on those pods
+```
+kubectl get po -l creation_method=manual
+kubectl get po -l env
+kubectl get po -l '!env'
+```
+
+## 3.5. Using labels and selectors to constrain pod scheduling
+
+Labels can be attached to any Kubernetes object, including nodes. 可以通过这种方式使得某些pod只会被schedule到某些node上面去, 具体的更改方式参考书本
+
+## 3.6. Annotating pods
+
+In addition to labels, pods and other objects can also contain annotations. Annotations are also key-value pairs, can hold much larger pieces of information and are primarily meant to be used by tools
+```
+kubectl annotate pod kubia-manual mycompany.com/someannotation="foo bar"
+```
+
+## 3.7. Using namespaces to group resources
+
+Kubernetes namespaces provide a scope for object names, you can split them into multiple namespaces, which also allows you to use the same resource name multiple times
+
+并不是所有的resource都会根据namespace来划分, 比如说node这种硬件资源属于global and not tied to a single namespace
+```
+kubectl get ns
+kubectl get pod --namespace kube-system
+```
+
+除了isolating resource之外, namespace can also be used for allowing only certain users access to particular resources and even for limiting the amount of computational resources available to individual users
+
+Namespace并不provide any kind of isolation of running objects, 比如说不同的用户将pod deploy到不同的namespace时, 这些pod仍然可以互相交流(根据具体的network设置而定)
+
+## 3.8. Stopping and removing pods
+```
+kubectl delete pod kubia-gpu
+kubectl get pod --namespace kube-system
+kubectl delete ns custom-namespace
+kubectl delete all --all
+```
+最后一个命令中, 第一个`all`说明要删除所有类型的resource, 第二个`--all`则说明要删除所有名字的resource instance
