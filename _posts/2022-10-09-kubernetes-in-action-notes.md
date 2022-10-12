@@ -214,3 +214,228 @@ kubectl delete ns custom-namespace
 kubectl delete all --all
 ```
 最后一个命令中, 第一个`all`说明要删除所有类型的resource, 第二个`--all`则说明要删除所有名字的resource instance
+
+# 4. Replication and other controllers: deploying managed pods
+
+Pods represent the basic deployable unit in Kubernetes, 不过在实际中, 我们基本不会直接操作pod, 而是通过其他资源create并且manage pod
+
+## 4.1. Keeping pods healthy
+
+一旦pod被schedule到某个node之后, 所属node的Kubelet会负责run the container and restart the container if the container's main process crashes. 对于container而言, 各种各样错误的可能有很多，如果我们一一在程序中检查相对应的异常并尝试作出处理的话, 很可能没有办法cover所有的case, 故而最好的方法是在外部检测application的health, 发现失败之后交由Kubelet进行重启
+
+### 4.1.1. Intorducing liveness probes
+
+Kubernetes can check if a container is still alive through liveness probes. 一般可以使用以下三种方式
+- HTTP GET: 使用HTTP GET到container的IP和host, 检查HTTP response code是否正常
+- TCP Socket: 尝试对container的某个port建立TCP connection, 建立成功则说明工作正常
+- Exec: Executes an arbitrary command inside the container and checks the command's exit status code, 0则表示正常
+
+### 4.1.2. Creating an HTTP-based liveness probe
+```
+...
+spec:
+  containers:
+  - image: luksa/kubia-unhealthy
+    name: kubia
+    livenessProbe:
+      httpGet:
+        path: /
+        port: 8080
+```
+
+### 4.1.3. Seeing a liveness probe in action
+
+这部分参考书里的例子, 具体不再详述
+```
+kubectl logs mypod --previous
+```
+
+### 4.1.4. Configuring additional properties of the liveness probe
+
+除了基本的liveness probe之外, 我们还可以定义一些其他的properties
+- delay: 在container started之后多久开始进行livenss probe, always remember to set an initial delay to account for your ppa's startup time
+- timeout: container must response within this timeout
+- period: 多久进行一次probe
+- failures: 可以tolerate多少次failure
+
+
+### 4.1.5. Creating effective liveness probes
+
+对于在production环境下运行的pods都应该定义liveness probe, 不然Kubernetes没有办法知道app是alive, 定义liveness probe的时候有以下的best practice
+1. What should check: 比如对于HTTP GET来说, 可以定义一个/health path, 每次访问的时候由app自己进行检测, /health HTTP endpoint shouldn't require authentication
+2. Keeping probes light: Livensss probe不应该食用过多的computational resource也不应该太花时间, 另外对于运行在JVM上的app, 要使用HTTP GET而不是Exec probe, 因为Exec probe会spin up a whole new JVM to get the liveness information
+3. Don't bother implementing retry loops in your probes
+4. Liveness probe wrap-up: Monitor和restart container的工作由node上的Kubelet负责完成
+
+## 4.2. Intorducing ReplicationControllers
+
+### 4.2.1. The operation of a ReplicationController
+
+A ReplicationController constantly monitors the list f running pods and makes sure the actual number of pods of a "type" always matches the desired number
+
+A ReplicationController has 3 parts:
+- Label selector: 确定在ReplicationController scope中的pods
+- Replica count: Desired number of pods should be running
+- Pod template: Used when creaeting new pod replicas, 更改pod template不会影响现有的pods, 只会对将来创建的pods产生影响
+
+### 4.2.2. Creating a ReplicationController
+
+具体语法参考书本, 不再详述
+
+### 4.2.3. Seeing the ReplicationController in action
+
+同上
+
+### 4.2.4. Moving pods in and out of the scope of a ReplicationController
+
+直接更改pod的label即可
+
+### 4.2.5. Changing the pod template
+
+Changing the pod template is like replacing a cookie cutter with another one. It will only affect the cookies you cut out afterward and will not effect on the ones you've already cut
+
+### 4.2.6. Horizontally scalling pods
+
+直接更改ReplicationController即可
+
+### 4.2.7. Deleting a ReplicationController
+
+When you delete a ReplicationController through `kubectl delete`, the pods are also deleted, you can also choose to delete only the ReplicationController and leave the pods running(by passing `--cascade-false` option)
+
+## 4.3. Using ReplicaSets instead of ReplicationControllers
+
+Always create ReplicaSets instead of ReplicationControllers
+
+### 4.3.1. Comparing a ReplicaSet to a ReplicationController
+
+A ReplicaSet behaves exactly like a ReplicationController, but it has more expressive pod selectors
+
+### 4.3.2. Defining a ReplicaSet
+
+具体语法参考书本, 不再详述
+
+### 4.3.3. Creating and examing a ReplicaSet
+
+同上
+
+### 4.3.4. Using the ReplicaSet's more expressive label selectors
+```
+selector:
+  matchExpressions:
+    - key: app
+      operator: In
+      values:
+        - kubia
+```
+
+如果`matchLabels`和`matchExpressions`都有指定, 那么必须要两个条件都满足才算match
+
+### 4.3.5. Wrapping up ReplicaSets
+```
+kubectl delete rs kubia
+```
+
+## 4.4. Running exactly one pod on each node with DaemonSets
+
+ReplicaSet和ReplicationController只能保证在整个Kubernetes cluster中运行指定数量的pod, 但是对于这些pod在node中的分布则不容易指定. 如果我们希望each node needs to run exactly one instance of the pod, 可以使用`DaemonSet`
+
+### 4.4.1. Using a DaemonSet to run a pod on every node
+
+Pods created by a DaemonSet already have a targe node specified and skip the Kubernetes Scheduler. A DaemonSet makes sure it creates as many pods as there are nodes and deploys each one on its own node
+
+### 4.4.2. Using a DaemonSet to run pods only on certain nodes
+
+使用`nodeSelector`, 具体里的例子见书本
+
+## 4.5. Running pods that perform a single completable task
+
+### 4.5.1. Introducing the Job resource
+
+Kubernetes同时支持`Job` resource, it allows you to run a pod whose container isn't restarted when the process running inside finishes successfully
+
+### 4.5.2. Defining a Job resource
+
+具体例子见书本, 不再详述. 有一个需要注意的property时`restartPolicy`, 默认的值是`Always`, 但是Job pod不能使用这个默认policy, 需要将其设置为`onFailure`或者`Never`
+
+### 4.5.3. Seeing a Job run a pod
+
+在Job执行完之后, pod并不会delete, 方便检查log. The pod will be deleted when you delete it or the Job that created it.
+
+### 4.5.4. Running multiple pod instances in a Job
+
+主要是`completions`和`parallelism`两个property
+- completions: Setting completions to 5 makes this Job run five pods sequentially
+- parallelism: By setting parallelism to 2, the Job creates two Pods and runs them in parallel
+
+### 4.5.5. Limiting the time allowed for a Job pod to complete
+
+使用`activeDeadlineSeconds`
+
+## 4.6. Scheduling Jobs to run periodically or once in the future
+
+Kubernetes支持`CronJob`, 在指定的时间, Kubernetes will create a Job resource according to the Job template configured in the CronJob object.
+
+### 4.6.1. Creating a CronJob
+
+具体例子见书本, 不再详述 
+
+### 4.6.2. Understanding how scheduled jobs are run
+
+在大概指定的时间, Kubernetes会创建Job, Job进而创建pods, 可以使用`starrtingDeadlineSeconds`规定必须在指定时间多久之后开始, 否则判定为fail
+
+# 5. Services: enabling clients to dicover and talk to pods
+
+对于一些pod来说, 需要对外提供固定的hostname和port, 即使是某些pod fail, 被scale up, scale down, hostname和port也要保持固定. 为此, Kubernetes提供了Services
+
+## 5.1. Services
+
+A Kubernetes Service is a resource you create to make a single, constant point of entry to a group of pods providing the same service, 每个service都有固定的IP地址和port, 并且在service存在过程中不会发生变化, client对这个IP地址和port的链接会被转发到这个service背后的某个pod instance
+
+### 5.1.1. Creating services
+
+创建service使用的YAML descriptor参考书本, 这里不再详述
+```
+kubectl get svc
+```
+当我们刚刚创建service并使用上面的command去查看时, 很可能看到我们的service被分配了`CLUSTER-IP`, 但并没有`EXTERNAL-IP`, `CLUSTER-IP`只能在Kubernetes cluster内部中使用
+
+`kubectl exec` command allows us to remotely run arbitrary commands inside an existing container of a pod, 我们可以使用这个命令测试service的`CLUSTER-IP`
+```
+kubectl exec kubia-7nog1 -- curl -s http://10.111.249.153
+```
+这里的`--` signals the end of command options for `kubectl`, everything after it is the command that should be executed inside the pod
+
+上面的`CLUSTER-ip`之后对应多个pod, 因此我们的request很可能被转发到任意一个pod, 如果想要all requests made by a certain client to be redirected to the same pod every time, you can set the `sessionAffinity` property to `ClusterIP`(默认为`None`). Kubernetes暂时不支持cookie-based session affinity, 因为Kubernetes Service deal with TCP and UDP packages and don't care about the payload they carry. 因为cookies是在HTTP protocol中, service并不知道它们
+
+另外在创建Service时, 尽量使用named port, 这样就把port number的定义固定在了pod spec中
+
+### 5.1.2. Discovering services
+
+虽然Service的IP地址和port在Service存在期间不会发生改变,  怎么样让其他的Service发现它也是需要考虑的问题, 通常有以下几种方法
+
+#### (1) 使用Environment Variables
+当创建pod的时候, Kubernetes会初始化一系列的环境变量, 而这些环境变量指向当时已知的services. If  we create the service before creating the client pods, processes in those pods can get the IP address and port of the service by inspecting their environment variables. 如果我们的Service name为`kubia`, 那么对应的环境变量就是`KUBIA_SERVICE_HOST`, `KUBIA_SERVICE_PORT`, `-`会被转化成`_`
+#### (2) 使用DNS
+Kubernetes cluster自带DNS server, 任何pod的DNS query都会先经过cluster的DNS server, 而每一个service都会得到fully qualified domain name(FQDN)
+```
+backend-database.default.svc.cluster.local
+<service name>.<namespace>.<configurable cluster domain suffix>
+```
+我们仍然需要port number, 如果service使用的是默认端口则没问题(80 for HTTP), 否则还是要从environment variable中得到
+
+另外需要注意的是, ssh到某个container中ping service name是行不通的. That's because the service's cluster IP is a virtual IP, and only has meaning when combined with the service port
+```
+$ kubectl exec -it kubia-3inly bash
+
+root@kubia-3inly:/# curl http://kubia
+You’ve hit kubia-8awf3
+
+root@kubia-3inly:/# ping kubia
+PING kubia.default.svc.cluster.local (10.111.249.153): 56 data bytes
+^C--- kubia.default.svc.cluster.local ping statistics ---
+54 packets transmitted, 0 packets received, 100% packet loss
+```
+
+## 5.2. Connecting to services living outside the cluster
+
+### 5.2.1. Introducing service endpoints
