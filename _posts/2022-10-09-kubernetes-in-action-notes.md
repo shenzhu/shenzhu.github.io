@@ -439,3 +439,244 @@ PING kubia.default.svc.cluster.local (10.111.249.153): 56 data bytes
 ## 5.2. Connecting to services living outside the cluster
 
 ### 5.2.1. Introducing service endpoints
+
+Services并不是直接与pod打交道, Endpoint在中间起到桥梁的作用. Endpoints resource is a list of IP addresses and ports exposing a service. Service中的pod selector会被用来build a list of IPs and ports, which is then stored in the Endpoint resources. 当client连接到service的时候, service proxy会选择其中一个并且将incoming connection redirect到那里
+
+### 5.2.2. Manually configuring service endpoints
+
+将Service和它的endpoints分开让我们能够分别创建和更新这两种资源, 如果我们创建Service但并没有pod selector的话, Kubernetes不会为其创建endpoint, endpoints are a separate resource and not an attribute of a service
+
+关于如何manually创建endpoint, 见书本
+
+### 5.2.3. Creating an alias for an external service
+
+Create a Service resource with the `type` field set to `ExternalName`. `ExternalName` services are implemented solely at the DNS level-a simpe `CNAME` DNS record is created for the service.
+
+## 5.3. Exposing services to external clients
+
+有以下几种方式to make a service accessible externally:
+- Setting the service type to `NodePort`: 对于`NodePort` service, 每个cluster node都会在开一个port并且将这个port收到的traffic redirect到underlying service
+- Setting the service type to `LoadBalancer`: 是基于`NodePort`的一种延申, this makes the service accessible through a dedicated load balancer, provisioned from the cloud infrastructure Kubernetes is running on
+- Creating an `Ingress` resource: 它在HTTP层工作
+
+### 5.3.1. Using a NodePort service
+
+通过创建`NodePort` service, you make Kubernetes reserve a port on all its nodes and forward incoming connections to the pods that are part of the service
+
+具体的YAML语法见书本, 它本质上是Service的一种类型, 并不是像Endpoint一样是新的resource
+
+缺点是我们只能通过node的ip地址去访问, 如果某个node fail只能手动切换另一个node的ip地址
+
+### 5.3.2. Exposing a service through an external load balancer
+
+The load balancer will have its own unique, publicly accessible IP address and will redirect all connections to your service, 它是`NodePort`的extension
+
+具体的YAML语法见书本, 它本质上也是Service的一种类型
+
+### 5.3.3. Understanding the peculiarities of external connections
+
+在我们使用load balancer时request的流程是`client -> load balander -> pod`, 可见中间多了一层hop. When the connection is received through a node port, the packets' source IP is changed, because Source Network Address Translation(SNAT) is performed on the packets.
+
+## 5.4. Exposing services externally through an Ingress resource
+
+在我们有多个services的时候, 如果使用`LoadBalander`的话那么对于每个service都要创建, 然而`Ingress`只需要创建一个. Ingress operate at the application layer of the network stack(HTTP) and can provide features such as cookie-based session affinity and the like
+
+如果想要使用`Ingress`的话, 整个cluster里必须有Ingress controller, 不同的Kubernetes环境对于controller有不同的实现, 甚至有些会不提供Ingress controller
+
+### 5.4.1. Creating an Ingress resource
+
+具体YAML语法见书本
+
+### 5.4.2. Accessing the service through the Ingress
+
+想要通过URL访问service的话, you need to make sure the domain name resolves to the IP of the Ingress controller, 可以使用下面的命令得到在ingress中domain对应的IP
+```
+kubectl get ingresses
+```
+![Accessing pods through an Ingress](../assets/images/2022-10-09-kubernetes-in-action-notes-5-4-2-1.png)
+
+### 5.4.3. Exposing multiple services through the same Ingress
+
+具体语法见书本
+
+### 5.4.4. Configuring Ingress to handle TLS traffic
+
+具体内容见书本
+
+## 5.5. Signling when a pod is ready to accept connections
+
+### 5.5.1. Introducing readiness probes
+
+Liveness probes can keep your apps healthy by ensuring unhealthy containers are restarted automatically. Similar to liveness probes, Kubernetes allows you to also define a readiness probe for your pod. The readiness probe is invoked periodically and determines whether the specific pod should receive client requests or not.
+
+和liveness pod相似, readiness pod也有三种
+- Exec probe
+- HTTP GET probe
+- TCP socket probe: If TCP connection can be established to a specific port of the pod, the container is considered ready
+
+当container start的时候, wait for a configurable amount of time to pass before performing the first readiness check. After that, it invokes the probe periodically and acts based on the result of the readiness probe. 与liveness probe不同的是, if a container fails the readiness check, it won't be killed or restarted. Liveness probes keep pods healthy by killing off unhealthy containers and replacing them with new, healthy ones, whereas readiness probes make sure that only pods that are ready to serve requests receive them
+
+当readiness probe fail的时候, 对应的pod会被移出Endpoints. A readiness probe makes sure clients only talk to those healthy pods and never notice there's anything wrong with the system
+
+### 5.5.2. Adding a readiness probe to a pod
+
+可以通过更改ReplicaSet/ReplicationController的pod template来实现, 但要注意的是更改pod template对现有的pod无效, 只对将来的pod有效
+
+### 5.5.3. Understanding what real-world readiness probes should do
+
+在production service中, always define a readiness probe. If you don't add a readiness probe to your pods, they'll become service endpoints almost immediately, 但实际上service可能还没准备好
+
+## 5.6. Using a headless service for discovering individual pods
+
+对于需要connect所有pod的client, 它需要知道每个pod的IP地址, by setting the `clusterIP` field to `None` in service specification, the DNS server will return the pod IPs instead of the single service IP.
+
+### 5.6.1. Creating a headless service
+
+Setting the `clusterIP` field in a service spec to `None` makes the service headless
+
+### 5.6.2. Discovering pods through DNS
+
+```
+$ kubectl exec dnsutils nslookup kubia-headless
+...
+Name: kubia-headless.default.svc.cluster.local
+Address: 10.108.1.4 
+Name: kubia-headless.default.svc.cluster.local
+Address: 10.108.2.5 
+```
+当client链接headeless service的时候, DNS会返回所有pod的IP地址, 这时的load balancing为DNS round-robin, 而不是service proxy
+
+### 5.6.3. Discovering all pods-even thoses that aren't ready
+```
+service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+```
+
+## 5.7. Troubleshooting services
+
+具体的建议见书本
+
+# 6. Volumes: attaching disk storage to containers
+
+Each container in a pod has its own isolated filesystem, because the file system comes from the container’s image. If container restarted, new container will not see anything that was written to the filesystem by the previous container, even though the newly started container runs in the same pod
+
+Volume是一个pod的概念, 因此无论pod中的container怎样重启, 都能看到volume中的数据, 在同一个pod里多个container也可以使用相同的volume
+
+## 6.1. Introducing volumes
+
+Kubernetes volumes are a component of a pod and are thus defined in the pod's specification. A volume is available to all containers in the pod, but it must be mounted in each container that needs to access it.
+
+### 6.1.1. Explaining volumes in an example
+
+![Three containers sharing two volumes](../assets/images/2022-10-09-kubernetes-in-action-notes-6-1-1-1.png)
+
+Linux allows you to mount a filesystem at arbitrary locations in the file tree. When you do that, the contents of the mounted filesystem are accessible in the directory it's mounted into
+
+### 6.1.2. Introducing abailable volume types
+- emptyDir: A simple empty directory used for storing transient data
+- hostPath: Used for mounting directories from the worker node’s filesystem into the pod
+- gitRepo: Initialized by checking out the contents of a Git repository
+- nfs: An NFS share mounted into the pod
+- gcePersistentDisk, awsElasticBlockStore, azureDisk
+- cinder, cephfs, iscsi, flocker, glusterfs, quobyte, rbd, flexVolume: Network storage
+- configMap, secret, downwardAPI: Special types of volumes
+- persistentVolumeClaim - A way to use a pre- or dynamically provisioned persistent storage
+
+A single pod can use multiple volumes of different types at the same time
+
+## 6.2. Using volumes to share data between containers
+
+### 6.2.1. Using an emptyDir volume
+
+`emptyDir`会创建一个空的directory, apps可以向其中写入数据, 但是它作为一个volume, lifetime与pod绑定在一起, 当pod消失的时候其中的数据也会消失. 默认情况下`emptyDir`会在the worker node hosting the pod上创建volume
+
+具体例子和YAML语法见书本
+
+### 6.2.2. Using a Git repository as the starting point for a volume
+
+与`emptyDir`相同, 只不过会预先将指定的repo clone下来, 注意它不会主动去sync remote. 具体的sync工作可以另外创建一个sidecar container完成, sidecar container指的是a container that augments the operation of the main container of the pod
+
+## 6.3. Accessing files on the worker node's filesystem
+
+### 6.3.1. Intorducing the hostPath volume
+
+A `hostPath` volume points to a specific file or directory on the node's filesystem. Pods running on the same node and using the same path in their `hostPath` volume see the same files. 不要使用`hostPath`做DB的storage, pod可能会被schedule到不同的node上面, 因此看到的数据会不同
+
+### 6.3.2. Examing system pods that use hostPath volumes
+
+具体例子见书本, 不要用hostPath存储persistent data, 它应该只用来读写system files
+
+## 6.4. Using persistent storage
+
+### 6.4.1. Using a GCE Persistent Disk in a pod volume
+
+具体例子见书本
+
+### 6.4.2. Using other types of volumes with underlying persistent storage
+
+同上
+
+另外在pod中定义硬件类型不是一个好的选择, 这意味着pod的定义会与具体的cluster联系起来, 不能起到在各处都能运行的效果
+
+## 6.5. Decoupling pods from the underlying storage technology
+
+### 6.5.1. Introducing PersistentVolumes and PersistentVolumeClaims
+
+![PersistentVolumes and PersistentVolumeClaims](../assets/images/2022-10-09-kubernetes-in-action-notes-6-5-1-1.png)
+
+### 6.5.2. Creating a PersistentVolume
+
+具体语法见书本
+
+PersistentVolumes don't belong to any namespace, they're cluster-level resources like nodes
+
+### 6.5.3. Claiming a PersistentVolume by creating a PersistentVolumeClaim
+
+Need to claim the PersistentVolume first before we can use them in the pods
+
+具体语法见书本
+
+```
+kubectl get pvc
+```
+有三种access modes
+- RWO(ReadWriteOnce): 只能被一个node mount并读写
+- ROX(ReadOnlyMany): 可以被多个node mount并读
+- RWX(ReadWriteMany): 可以被多个node mount并读写
+
+注意以上限制都是针对node而言, 并不是针对pod的数量
+
+### 6.5.4. Using a PersistentVolumeClaim in a pod
+
+具体语法见书本
+
+### 6.5.5. Understanding the benefits of using PersistentVolumes and claims
+
+![Comparison of Using Storage](../assets/images/2022-10-09-kubernetes-in-action-notes-6-5-5-1.png)
+
+### 6.5.6. Recycling PersistentVolumes
+
+当pod删除之后, 它所使用PersistentVolumed的状态会显示为`Released`, not `Available`. 在`persistentVolumeReclaimPolicy`为`Retain`的情况下, as far as the aurthor knows(at that time), the only way to manually recycle PersistentVolume to make it available again is to delete and recreate it
+
+另外两种reclaim policy是Recycle和Delete, Recycle会将volume的内容删除并让其available again, 而Delete则会连带内容和volume
+
+## 6.6. Dynamic provisioning of PersistentVolumes
+
+Instead of the administrator pre-provisioning a bunch of PersistentVolumes, they need to define one or two (or more) StorageClasses and let the system create a new PersistentVolume each time one is requested through a PersistentVolumeClaim
+
+### 6.6.1. Defining the available storage types through StorageClass resources
+
+具体例子见书本
+
+### 6.6.2. Requesting the storage class in a PersistentVolumeClaim
+
+After the StorageClass resource is created, users can refer to the storage class by name in their PersistentVolumeClaims.
+
+具体例子见书本
+
+### 6.6.3. Dynamic provisioning without specifying a storage class
+
+Kubernetes会创建一个默认的StorageClass, 如果在PersistenVolumeClaim中没有指定StorageClass的话, 默认的就会使用
+
+Explicitly set storageClassName to "" if you want the PVC to use a preprovisioned PersistentVolume.
+
+![Dynamic Provisioning of PV](../assets/images/2022-10-09-kubernetes-in-action-notes-6-6-3-1.png)
