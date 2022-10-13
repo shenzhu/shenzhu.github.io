@@ -680,3 +680,87 @@ Kubernetes会创建一个默认的StorageClass, 如果在PersistenVolumeClaim中
 Explicitly set storageClassName to "" if you want the PVC to use a preprovisioned PersistentVolume.
 
 ![Dynamic Provisioning of PV](../assets/images/2022-10-09-kubernetes-in-action-notes-6-6-3-1.png)
+
+# 7. ConfigMaps and Secrets: configuring applications
+
+## 7.1. Configuring containerized applications
+
+一般来说有以下几种方法
+- Passing command-line arguments to containers
+- Setting custom environment variables for each container
+-  Mounting configuration files into containers through a special type of volume
+
+## 7.2. Passing command-line arguments to containers
+
+### 7.2.1 Defining the command and arguments in Docker
+
+The whole command that gets executed in the Docker container is composed fo two parts: the command and the arguments
+- ENTRYPOINT: Defines the executable invoked when the container is started
+- CMD: Specifies the argument that get passed to the ENTRYPOINT
+
+在定义ENTRYPOINT的时候有两种形式
+- shell form: `ENTRYPOINT node app.js`
+- exec form: `ENTRYPOINT ["node", "app.js"]`
+
+在shell方式下会先启动一个shell, 然后再在上面启动process, 而这一步是完全不需要的, 所以要使用exec方式
+
+### 7.2.2. Overriding the command and arguments in Kubernetes
+
+在Kubernete中定义pod的时候, 可以override ENTRYPOINT和CMD
+
+## 7.3. Setting environment variables for a container
+
+Like the container’s command and arguments, the list of environment variables also cannot be updated after the pod is created
+
+### 7.3.1. Specifying environment variables in a container definition
+
+具体语法见书本, 不再详述
+
+### 7.3.2. Referring to other environment variables in a variable's value
+```
+"$(FIRST_VAR)bar"
+```
+
+### 7.3.3. Understanding the drawback of hardcoding environment variables
+
+安全性, 复用性
+
+## 7.4. Decoupling configuration with a ConfigMap
+
+### 7.4.1. Introducing ConfigMaps
+
+Kubernetes allows separating configuration options into a separate object called a ConfigMap, which is a map containing key/value pairs with the values ranging from short literals to full config files
+
+An application doesn’t need to read the ConfigMap directly or even know that it exists. The contents of the map are instead passed to containers as either environment variables or as files in a volume 
+
+### 7.4.2. Creating a ConfigMap
+
+![ConfigMap](../assets/images/2022-10-09-kubernetes-in-action-notes-7-4-2-1.png)
+
+### 7.4.3. Passing a ConfigMap entry to a container as an environment variable
+`valueFrom`
+
+### 7.4.4. Passing all entries of a ConfigMap as environment variables at once
+`envFrom`
+
+### 7.4.5. Passing a ConfigMap entry as a command-line argument
+
+基于environment variable, 在args中指定environment variable
+
+### 7.4.6. Using a ConfigMap volume to expose ConfigMap entries as files
+
+A configMap volume will expose each entry of the ConfigMap as a file
+
+具体例子见书本
+
+Mounting a directory hides existing files in that directory, 可以指定要mount的file, 这样同一个directory的其他文件不会被隐藏
+
+默认情况下configMap volume中的file permission为644(-rw-r-r--), 可以更改
+
+### 7.4.7. Updating an app's config without having to restart the app
+
+更改configMap会导致configMap volume中的内容被更改, container可能会发现这个更改(视具体container中app的逻辑而定). All the files are updated atomically, which means all updates occur at once
+
+One big caveat relates to updating ConfigMap-backed volumes. If you’ve mounted a single file in the container instead of the whole volume, the file will not be updated
+
+If the app does support reloading, modifying the ConfigMap usually isn’t such a big deal, but you do need to be aware that because files in the ConfigMap volumes aren’t updated synchronously across all running instances, the files in individual pods may be out of sync for up to a whole minute
