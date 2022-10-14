@@ -1092,3 +1092,65 @@ cluster indefinitely.
 pod "kubia-0" deleted
 ```
 这时候StatefulSet就会重新创建`kubia-0`
+
+# 11. Understanding Kubernetes internals
+
+## 11.1. Understanding the architecture
+
+Kubernetes cluster分成两部分
+- The Kubernetes Control Plane
+- The (worker) nodes
+
+Control Plane is what controls and makes the whole cluster function
+- The etcd distributed persistent storage
+- The API server
+- The Scheduler
+- The Controller Manager
+
+Worker nodes的组成如下
+- The Kubelet
+- The Kubernetes Service Proxy(kube-proxy)
+- The Container Runtime(Docker, rkt or others)
+
+除了control plane和worker node之外, Kubernetes cluster还有一些add-on components
+- The Kubernetes DNS server
+- The Dashboard
+- An Ingress controller
+- Heapster
+- The Container Network Interface network plugin
+
+### 11.1.1. The distributed nature of Kubernetes components
+
+![Kubernetes Components](../assets/images/2022-10-09-kubernetes-in-action-notes-11-1-1-1.png)
+
+```
+$ kubectl get componentstatuses
+NAME STATUS MESSAGE ERROR
+scheduler Healthy ok
+controller-manager Healthy ok
+etcd-0 Healthy {"health": "true"}
+```
+
+Kubernetes的系统部件只和API server交流, 它们并不互相交流. API server是唯一与etcd交流的component, 其他的components都不会与etcd直接交流, 它们通过与API server的交流来更改etcd. API server与其他components之间的connection基本都是由components发起
+
+Worker node的components都需要在同一个node上运行, 但是Control Plane的components可以在多个server上运行. etcd和API server可以有多个, 但是scheduler和controller manager只能有一个active
+
+Control Plane的components和kube-proxy, 都可以直接deploy到system或者run as pods
+
+```
+$ kubectl get po -o custom-columns=POD:metadata.name,NODE:spec.nodeName 
+➥ --sort-by spec.nodeName -n kube-system
+POD NODE
+kube-controller-manager-master master 
+kube-dns-2334855451-37d9k master 
+etcd-master master 
+kube-apiserver-master master 
+kube-scheduler-master master 
+kube-flannel-ds-tgj9k node1 
+kube-proxy-ny3xm node1 
+kube-flannel-ds-0eek8 node2 
+kube-proxy-sp362 node2 
+kube-flannel-ds-r5yf4 node3 
+kube-proxy-og9ac node3 
+```
+As you can see in the listing, all the Control Plane components are running as pods on the master node. There are three worker nodes, and each one runs the kube-proxy and a Flannel pod, which provides the overlay network for the pods 
