@@ -764,3 +764,331 @@ Mounting a directory hides existing files in that directory, 可以指定要moun
 One big caveat relates to updating ConfigMap-backed volumes. If you’ve mounted a single file in the container instead of the whole volume, the file will not be updated
 
 If the app does support reloading, modifying the ConfigMap usually isn’t such a big deal, but you do need to be aware that because files in the ConfigMap volumes aren’t updated synchronously across all running instances, the files in individual pods may be out of sync for up to a whole minute
+
+## 7.5. Using Secrets to pass sensitive data to containers
+
+### 7.5.1. Introducing Secrets
+
+Kubernetes helps keep your Secrets safe by making sure each Secret is only distributed to the nodes that run the pods that need access to the Secret. Also, on the nodes themselves, Secrets are always stored in memory and never written to physical storage. etcd stores Secrets in encrypted form, making the system much more secure
+
+### 7.5.2. Introduing the default token Secret
+
+By default, the `default-token` Secret is mounted into every container
+
+![`default-token` Secret Mount](../assets/images/2022-10-09-kubernetes-in-action-notes-7-5-2-1.png)
+
+### 7.5.3. Creating a Secret
+
+与ConfigMap的创建方式相似
+
+### 7.5.4. Comparing ConfigMaps and Secrets
+```
+kubectl get secret fortune-https -o yaml
+kubectl get configmap fortune-config -o yaml
+```
+The contents of a Secret’s entries are shown as Base64-encoded strings, whereas those of a ConfigMap are shown in clear text
+
+You can use Secrets even for non-sensitive binary data, but be aware that the maximum size of a Secret is limited to 1MB
+
+The stringData field is write-only (note: write-only, not read-only). It can only be used to set values. When you retrieve the Secret’s YAML with kubectl get -o yaml, the stringData field will not be shown
+
+### 7.5.5. Using the Secret in a pod
+
+具体例子见书本
+
+### 7.5.6. Understanding image pull Secrets
+
+Secrets不仅可以pass给application, 同样可以作为private Docker Hub的credential
+```
+$ kubectl create secret docker-registry mydockerhubsecret \
+ --docker-username=myusername --docker-password=mypassword \ 
+ --docker-email=my.email@provider.com
+```
+
+# 8. Accessing pod metadata and other resources from applications
+
+## 8.1. Passing metadata through the Downward API
+
+Kubernetes Downward API allows you to pass metadata about the pod and its environment through environment variables or files (in a `downwardAPI` volume). It isn’t like a REST endpoint that your app needs to hit so it can get the data. It’s a way of having environment variables or files populated with values from the pod’s specification or status
+
+![ The Downward API exposes pod metadata through environment variables or files](../assets/images/2022-10-09-kubernetes-in-action-notes-8-1.png)
+
+### 8.1.1. Understanding the available metadata
+
+以下信息可以从Downward API获取:
+- The pod’s name
+- The pod’s IP address
+- The namespace the pod belongs to
+- The name of the node the pod is running on
+- The name of the service account the pod is running under
+- The CPU and memory requests for each container
+- The CPU and memory limits for each container
+- The pod’s labels
+- The pod’s annotations
+
+### 8.1.2. Exposing metadata through environment variables
+
+具体例子见书本
+
+![Pod metadata and attributes can be exposed to the pod through environment variables](../assets/images/2022-10-09-kubernetes-in-action-notes-8-1-2-1.png)
+
+### 8.1.3. Passing metadata through files in a downwardAPI volume
+
+You must use a `downwardAPI` volume for exposing the pod’s labels or its annotations, because neither can be exposed through environment variables
+
+具体例子见书本
+
+But the metadata available through the Downward API is fairly limited. If you need more, you’ll need to obtain it from the Kubernetes API server directly
+
+## 8.2. Talking to the Kubernetes API server
+
+### 8.2.1. Exploring the Kubernetes REST API
+```
+$ kubectl cluster-info
+Kubernetes master is running at https://192.168.99.100:8443
+```
+
+The `kubectl proxy` command runs a proxy server that accepts HTTP connections on your local machine and proxies them to the API server while taking care of authentication
+```
+$ kubectl proxy
+Starting to serve on 127.0.0.1:8001
+
+$ curl http://localhost:8001/apis/batch/v1
+{
+   "kind":"APIResourceList",
+   "apiVersion":"v1",
+   "groupVersion":"batch/v1",
+   "resources":[
+      {
+         "name":"jobs",
+         "namespaced":true,
+         "kind":"Job",
+         "verbs":[
+            "create",
+            "delete",
+            "deletecollection",
+            "get",
+            "list",
+            "patch",
+            "update",
+            "watch"
+         ]
+      },
+      {
+         "name":"jobs/status",
+         "namespaced":true,
+         "kind":"Job",
+         "verbs":[
+            "get",
+            "patch",
+            "update"
+         ]
+      }
+   ]
+}
+```
+
+### 8.2.2. Talking to the API server from within a pod
+
+To talk to the API server from inside a pod, you need to take care of three things
+- Find the location of the API server
+- Make sure you're talking to the API server and not something impersonating it
+- Authenticate with the server; otherwise it won't let you see or do anything
+
+具体Demo步骤见书本
+
+Recap how an app running inside a pod can access the Kubernetes API properly
+- The app should verify whether the API server’s certificate is signed by the certificate authority
+- The app should authenticate itself by sending the `Authorization` header with the bearer token
+- The `namespace` file should be used to pass the namespace to the API server when performing CRUD operations on API objects inside the pod’s namespace
+
+![ Using the files from the default-token Secret to talk to the API server](../assets/images/2022-10-09-kubernetes-in-action-notes-8-2-2-1.png)
+
+### 8.2.3. Simplifying API server communication with ambassador containers
+
+You can run `kubectl proxy` in an ambassador container alongside the main container and communicate with the API server through it
+
+具体例子见书本
+
+### 8.2.4. Using client libraries to talk to the API server
+
+If you plan on doing more than simple API requests, it’s better to use one of the existing Kubernetes API client libraries.
+
+具体的library参考书本或官方文档
+
+# 9. Deployments: updating applications declaratively
+
+Deployment helps to update apps running in a Kubernetes cluster and how Kubernetes with zero-downtime update process
+
+## 9.1. Updating applications running in pods
+
+通常我们有两种方法来update pod
+- Delete all existing pods first and then start the new ones
+- Start new ones and, once they’re up, delete the old ones
+
+### 9.1.1. Deleting old pods and replacing them with new ones
+
+![Updating pods by changing a ReplicationController’s pod template and deleting old Pods](../assets/images/2022-10-09-kubernetes-in-action-notes-9-1-1-1.png)
+
+### 9.1.2. Spinning up new pods and then deleting the old ones
+
+![Switching a Service from the old pods to the new ones](../assets/images/2022-10-09-kubernetes-in-action-notes-9-1-2-1.png)
+
+## 9.2. Performing an automatic rolling update with a ReplicationController
+
+具体Demo见书本
+```
+kubectl rolling-update kubia-v1 kubia-v2 --image=luksa/kubia:v2
+```
+
+![kubectl rolling-update](../assets/images/2022-10-09-kubernetes-in-action-notes-9-2-1.png)
+
+For `kubectl rolling-update`, update process is being performed by the client, if you lost network connectivity while kubectl was performing the update? The update process would be interrupted mid-way. Pods and ReplicationControllers would end up in an intermediate state. And it's imperative, not declaratively
+
+## 9.3. Using Deployments for updating apps declaratively
+
+A Deployment is a higher-level resource meant for deploying applications and updating them declaratively. When you create a Deployment, a ReplicaSet resource is created underneath (eventually more of them)
+
+In Deployment, you’re defining the desired state through the single Deployment resource and letting Kubernetes take care of the rest
+
+### 9.3.1. Creating a Deployment
+
+具体语法见书本
+```
+kubectl create -f kubia-deployment-v1.yaml --record 
+```
+
+```
+$ kubectl get pod
+NAME READY STATUS RESTARTS AGE
+kubia-1506449474-otnnh 1/1 Running 0 14s
+kubia-1506449474-vmn7s 1/1 Running 0 14s
+kubia-1506449474-xis6m 1/1 Running 0 14s
+```
+Deployment doesn’t manage pods directly. Instead, it creates ReplicaSets and leaves the managing to them, 上面输出中的1506449474是ReplicaSet
+
+### 9.3.2. Updating a Deployment
+
+When updating, the only thing you need to do is modify the pod template defined in the Deployment resource and Kubernetes will take all the steps necessary to get the actual system state to what’s defined in the resource
+
+Be aware that if the pod template in the Deployment references a ConfigMap (or a Secret), modifying the ConfigMap will not trigger an update
+
+默认的strategy是`RollingUpdate`, 它会remove old pods one by one, while adding new ones at the same time, keeping the application available throughout the whole process, and ensuring there’s no drop in its capacity to handle requests
+
+在更新下一个版本之后, Deployment之前创建的ReplicaSet并不会删除, 这样可以提供roll back
+
+### 9.3.3. Rolling back a deployment
+```
+$ kubectl rollout undo deployment kubia
+deployment "kubia" rolled back
+```
+
+```
+$ kubectl rollout history deployment kubia
+deployments "kubia":
+REVISION CHANGE-CAUSE
+2 kubectl set image deployment kubia nodejs=luksa/kubia:v2
+3 kubectl set image deployment kubia nodejs=luksa/kubia:v3
+
+$ kubectl rollout undo deployment kubia --to-revision=1
+```
+
+Each ReplicaSet stores the complete information of the Deployment at that specific revision, so you shouldn’t delete it manually, 具体存储多少revision history可以由Deployment中的`reversionHistoryLimit`指定
+
+### 9.3.4. Controlling the rate of the rollout
+
+主要是`maxSurge`和`maxUnavailable`两个性质的使用
+
+### 9.3.5. Pausing the rollout process
+```
+$ kubectl set image deployment kubia nodejs=luksa/kubia:v4
+deployment "kubia" image updated
+
+$ kubectl rollout pause deployment kubia
+deployment "kubia" paused
+
+$ kubectl rollout resume deployment kubia
+deployment "kubia" resumed
+```
+
+If a Deployment is paused, the undo command won’t undo it until you resume the Deployment
+
+### 9.3.6. Blocking rollouts of bad versions
+
+The `minReadySeconds` property specifies how long a newly created pod should be ready before the pod is treated as available. A pod is ready when readiness probes of all its containers return a success
+
+如果没有定义readiness probe的话, the container and the pod were always considered ready, even if the app wasn’t truly ready or was returning errors
+
+The time after which the Deployment is considered failed is configurable through the `progressDeadlineSeconds` property in the Deployment spec.
+
+# 10. StatefulSets: deploying replicated stateful applications
+
+## 10.1. Replicating stateful pods
+
+ReplicaSets create multiple pod replicas from a single pod template. These replicas don’t differ from each other, apart from their name and IP address. If the pod template includes a volume, which refers to a specific PersistentVolumeClaim, all replicas of the ReplicaSet will use the exact same PersistentVolumeClaim and therefore the same PersistentVolume bound by the claim
+
+![ReplicaSet with PVC](../assets/images/2022-10-09-kubernetes-in-action-notes-10-1-1.png)
+
+You can’t use a ReplicaSet to run a distributed data store
+
+### 10.1.1. Running multiple replicas with separate storage for each
+
+书里介绍了几种不work的方法, 还是很有助于拓宽思路
+
+### 10.1.2. Providing a stable identity for each pod
+
+When a ReplicaSet replaces a pod, the new pod is a completely new pod with a new hostname and IP, 而且之前的data也可能丢掉了, 这两种情况都有问题
+
+## 10.2. Understanding StatefulSets
+
+### 10.2.1. Comparing StatefulSets with ReplicaSets
+
+Pets VS Cattle
+
+When a stateful pod instance dies (or the node it’s running on fails), the pod instance needs to be resurrected on another node, but the new instance needs to get the same name, network identity, and state as the one it’s replacing
+
+A StatefulSet makes sure pods are rescheduled in such a way that they retain their identity and state. It also allows you to easily scale the number of pets up and down
+
+### 10.2.2. Providing a stable network identity
+
+Each pod created by a StatefulSet is assigned an ordinal index (zero-based), which is then used to derive the pod’s name and hostname, and to attach stable storage to the pod
+
+StatefulSet需要创建一个governing headless Service, 通过这个Service每个pod都得到自己的DNS entry, 因此它的peers和other clients可以通过这个hostname找到它. 假如governing Service属于`default` namespace并且名字是`foo`，其中某个pod叫做`A-0`，那么可以通过`a-0.foo.default.svc.cluster.local`和pod交流
+
+![StatefulSet Replace](../assets/images/2022-10-09-kubernetes-in-action-notes-10-2-2-1.png)
+
+Scaling the StatefulSet creates a new pod instance with the next unused ordinal index. Scaling down a StatefulSet always removes the instances with the highest ordinal index first, StatefulSets scale down only one pod instance at a time, StatefulSets also never permit scale-down operations if any of the instances are unhealthy
+
+### 10.2.3. Providing stable dedicated storage to each stateful instance
+
+StatefulSet can also have one or more volume claim templates, which enable it to stamp out PersistentVolumeClaims along with each pod instance. Scaling down StatefulSet deletes only the pod, leaving the claims alone, a subsequent scale-up can reattach the same claim along with the bound PersistentVolume and its contents to the new pod instance
+
+![StatefulSets with PV](../assets/images/2022-10-09-kubernetes-in-action-notes-10-2-3-1.png)
+
+![StatefulSets Scaling with PV](../assets/images/2022-10-09-kubernetes-in-action-notes-10-2-3-2.png)
+
+### 10.2.4. Understanding StatefulSet guarantees
+
+StatefulSet保证`at-most-once`, 也就是说两个具有相同identity并且使用同一个PersistentVolumeClaim的pod instances不可能同时运行, StatefulSet must be absolutely certain that a pod is no longer running before it can create a replacement pod. This has a big effect on how node failures are handled
+
+## 10.3. Using a StatefulSet
+
+具体的Demo见书本
+
+## 10.4. Discovering peers in a StatefulSet
+
+For a pod to get a list of all the other pods of a StatefulSet, all you need to do is perform an SRV DNS lookup.
+
+## 10.5. Understanding how StatefulSets deal with node failures
+
+如果我们将其中一个node的网断掉, 它的Kubelet就没有办法与Kubernetes API server进行交流, incident相对应的pod状态会变成`NotReady`, 如果control plane一直没有办法得到pod的status updates, pod的状态就会变成`Unknown`, if the pod’s status remains unknown for more than a few minutes (this time is configurable), the pod is automatically evicted from the node. This is done by the master
+
+正常状态下删除某个pod需要对应node上Kubelet的确认, 也可以使用下面的command在没有Kubelet确认的情况下删除pod
+```
+$ kubectl delete po kubia-0 --force --grace-period 0
+warning: Immediate deletion does not wait for confirmation that the running 
+resource has been terminated. The resource may continue to run on the 
+cluster indefinitely.
+pod "kubia-0" deleted
+```
+这时候StatefulSet就会重新创建`kubia-0`
