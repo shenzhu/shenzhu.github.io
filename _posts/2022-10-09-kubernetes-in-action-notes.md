@@ -1153,4 +1153,241 @@ kube-proxy-sp362 node2
 kube-flannel-ds-r5yf4 node3 
 kube-proxy-og9ac node3 
 ```
-As you can see in the listing, all the Control Plane components are running as pods on the master node. There are three worker nodes, and each one runs the kube-proxy and a Flannel pod, which provides the overlay network for the pods 
+As you can see in the listing, all the Control Plane components are running as pods on the master node. There are three worker nodes, and each one runs the kube-proxy and a Flannel pod, which provides the overlay network for the pods
+
+### 11.1.2. How Kubernetes uses etcd
+
+etcd是一个fast, distributed and consistent key-value store, 它使用Raft算法来保证consistency, 所以一般要由3-7个instance, 在Kubernetes中, 唯一与它交流的component是API server. 这样带来的好处是可以使用更加robust optimistic locking system和validation, 并且支持切换底层存储
+
+关于optimistic concurrency control, 每一份data都有version number, 每次data被update的时候version number就会增加. When updating the data, the version number is checked to see if it has increased between the time the client read the data and the time it submits the update
+
+Kuberntes将所有的data存储在`/registry`中
+```
+$ etcdctl ls /registry
+/registry/configmaps
+/registry/daemonsets
+/registry/deployments
+/registry/events
+/registry/namespaces
+/registry/pods
+...
+```
+
+### 11.1.3. What the API server does
+
+API server负责处理其他所有components和clients(比如kubectl)对data的CRUD操作(RESTful API), 同时他也会对request做validation并perform optimistic locking
+
+![The operation of the API server](../assets/images/2022-10-09-kubernetes-in-action-notes-11-1-3-1.png)
+
+在处理HTTP request的时候, API server有3个步骤
+- Authenticate the client: 由API server中的一个或者多个authentication plugin提供
+- Authorize the client: 确保client有足够的permission进行要求的操作
+- Validate/Admission: 对resource object进行validation和enrich, 由admission control plugin负责
+
+注意如果只是读请求的话, request并不需要通过admission control
+
+### 11.1.4. Understanding how the API server notifies client of resource changes
+
+API server只会操作etcd里的数据, 它不会创建pod, 不会创建ReplicaSet也不会manage endpoint, 这些都是由Controller Manager中的controller负责. 这些controllers可以observe API server的changes来得到更新
+
+Clients watch for changes by opening an HTTP connection to the API server. Through this connection, the client will then receive a stream of modifications to the watched objects
+
+![Watch changes in API server](../assets/images/2022-10-09-kubernetes-in-action-notes-11-1-4-1.png)
+
+### 11.1.5. Understanding the Scheduler
+
+Scheduler会通过API server的watch功能得知有新的pod需要被创建, 然后它就会给每个需要被创建的新pod assign某个node. All the Scheduler does is update the pod definition through the API server. The API server then notifies the Kubelet (again, through the watch mechanism described previously) that the pod has been scheduled
+
+选择node的环节分成两个部分
+- 首先会进行filtering, 得到可以schedule当前pod的node, 这一步可能是根据label, node capacity等等因素
+- 从可行的node里选出最好的一个, 如果多个node的score一样则round-robin
+
+可以通过在pod里指定`schedulerName`来使用不同的Scheduler implementation, 默认值是`default-scheduler`
+
+### 11.1.6. Introducing the controllers running in the Controller Manager
+
+API server只负责更改etcd, 而Scheduler只是给pod选择node, 因此我们需要其他active components保证actual state of the system converges toward the desired state, as specified in the resource deployed through the API server. This work is done by controllers running inside the Controllder Manager. The single Controller Manager process performing various reconciliation tasks. Eventually those controllers will be split up into separate processes. 基本上对于每个Kuberntes resource(ReplicaSet, Deployment, Node, Service)都有对应的controller
+
+通常来说, controllers run a reconciliation loop, which reconciles the actual state with the desired state(specified in the `spec` section) and writes the new actual state to the resource's `status` section. Controllers同样会使用watch机制来得到更新, 但使用watch机制并不能保证不会miss任何一个event, 所以它们会定时进行`re-list`操作来保证没有丢失任何消息. Controllers不会互相交流
+
+Controllers operate on the API objects through the API server. They don’t communicate with the Kubelets directly or issue any kind of instructions to them. In fact, they don’t even know Kubelets exist. After a controller updates a resource in the API server, the Kubelets and Kubernetes Service Proxies, also oblivious of the controllers’ existence, perform their work, such as spinning up a pod’s containers and attaching network storage to them, or in the case of services, setting up the actual load balancing across pods
+
+### 11.1.7. What the Kubelete does
+
+Kubelet is the component responsible for everything running on a worker node. Its initial job is to register the node it’s running on by creating a Node resource in the API server. Then it needs to continuously monitor the API server for Pods that have been scheduled to the node, and start the pod’s containers. 它不会直接去启动pod, 而是告知container runtime(Docker, rkt,...)去做这件事情, 之后constantly monitors running containers并且报告它们的status, events和resource consumption给API server
+
+Kubelet同时也会负责运行liveness probes, 重启failed containers, 并且会terminate containers当Pod删除的时候并将删除结果告知API server
+
+理论上来说只要有Kubelet我们就可以run pod而不需要API server, 这个功能在运行containerized versions of the Control Plane components时会使用
+
+![The Kubelet runs pods based on pod specs from the API server and a local file directory](../assets/images/2022-10-09-kubernetes-in-action-notes-11-1-7-1.png)
+
+
+### 11.1.8. The role of the Kubernetes Service Proxy
+
+kube-proxy会保证clients can connect to the services you define through the Kubernetes API. When a service is backed by more than one pod, the proxy performs load balancing across those pods
+
+### 11.1.9. Introducing Kubernetes add-ons
+
+These components are available as add-ons and are deployed as pods by submitting YAML manifests to the API server
+
+## 11.2. How controllers cooperate
+
+### 11.2.1. Understanding which components are involved
+
+在Kubernetes cluster中没有任何任务的时候, controllers, Scheduler和Kubelet就已经在观察API server的更新
+
+![Kubernetes components watching API objects through the API server](../assets/images/2022-10-09-kubernetes-in-action-notes-11-2-1-1.png)
+
+### 11.2.2. The chain of events
+
+![The chain of events that unfolds when a Deployment resource is posted to the API server](../assets/images/2022-10-09-kubernetes-in-action-notes-11-2-2-1.png)
+
+
+### 11.2.3. Observing cluster events
+
+Control Plane components和Kubelet都会在它们perform actions的时候向API server发送events, 它们会创建Event resource
+```
+$ kubectl get events --watch
+ NAME KIND REASON SOURCE 
+... kubia Deployment ScalingReplicaSet deployment-controller 
+ ➥ Scaled up replica set kubia-193 to 3
+... kubia-193 ReplicaSet SuccessfulCreate replicaset-controller 
+ ➥ Created pod: kubia-193-w7ll2
+... kubia-193-tpg6j Pod Scheduled default-scheduler 
+ ➥ Successfully assigned kubia-193-tpg6j to node1
+... kubia-193 ReplicaSet SuccessfulCreate replicaset-controller 
+ ➥ Created pod: kubia-193-39590
+... kubia-193 ReplicaSet SuccessfulCreate replicaset-controller 
+ ➥ Created pod: kubia-193-tpg6j
+```
+
+- SOURCE: Controller performing the action
+- NAME: Resource name
+- KIND: Controller name
+- REASON/MESSAGE: Details about what the controller has done
+
+## 11.3. Understanding what a running pod is
+
+如果我们仅仅使用`kubectl run nginx --image=nginx`启动一个container, 之后如果我们详细inspect的话会发现一个pause container
+```
+docker@minikubeVM:~$ docker ps
+CONTAINER ID IMAGE COMMAND CREATED
+c917a6f3c3f7 nginx "nginx -g 'daemon off" 4 seconds ago 
+98b8bf797174 gcr.io/.../pause:3.0 "/pause" 7 seconds ago
+...
+```
+
+This pause container is the container that holds all the containers of a pod together. The pause container is an infrastructure container whose sole purpose is to hold all these namespaces(Linux namespaces). All other used-defined containers of a pod then use the namespaces of the pod infrastructure container. 这个container的生命周期与pod紧密联系在一起, 如果这个pod被kill掉了, Kubelet会重启它和pod里的所有container
+
+![A two-container pod results in three running containers sharing the same Linux namespaces](../assets/images/2022-10-09-kubernetes-in-action-notes-11-3-1.png)
+
+
+## 11.4. Inter-pod networking
+
+The network the pods use to communicate must be such that the IP address a pod sees as its own is the exact same address that all other pods see as the IP address of the pod in question, but when a pod communicates with services out on the internet, the source IP of the packets the pod sends does need to be changed, because the pod’s IP is private
+
+这部分设计到部分network的知识, 暂时略过
+
+## 11.5. How services are implemented
+
+### 11.5.1. Introducing the kube-proxy
+
+Everything related to Services is handled by the kube-proxy process running on each node
+
+### 11.5.2. How kube-proxy uses iptables
+
+When a service is created in the API server, the virtual IP address is assigned to it immediately. Soon afterward, the API server notifies all kube-proxy agents running on the worker nodes that a new Service has been created. Then, each kube-proxy makes that service addressable on the node it’s running on. It does this by setting up a few iptables rules, which make sure each packet destined for the service IP/port pair is intercepted and its destination address modified, so the packet is redirected to one of the pods backing the service. 
+
+![Network packets sent to a Service’s virtual IP/port pair are modified and redirected to a randomly selected backend pod](../assets/images/2022-10-09-kubernetes-in-action-notes-11-5-2-1.png)
+
+## 11.6. Running highly available clusters
+
+### 11.6.1. Making your apps highly available
+
+- Running multiple instances to reduce the likelihood of downtime
+- Using leader-election for non-horizontally scalable apps
+
+### 11.6.2. Making Kubernetes Control Plane components highly available
+
+![A highly-available cluster with three master nodes](../assets/images/2022-10-09-kubernetes-in-action-notes-11-6-2-1.png)
+
+# 12. Securing the Kubernetes API server
+
+## 12.1. Understanding authentication
+
+API server can be configured with one or more authentication plugins, it stops invoking the remaining authentication plugins and continues onto the authorization phase
+
+### 12.1.1. Users and groups
+
+An authentication plugin returns the username and group(s) of the authenticated user. 通常来说系统内可能有两种user
+- Actual humans(users): SSO(Single Sign On) system
+- Pods(applications running inside them): Use service accounts, created and stored in the cluster as ServiceAccount resources
+
+Groups returned by the plugin are nothing but strings, representing arbitrary group names
+
+### 12.1.2. Introducing ServiceAccounts
+
+Every pod is associated with a ServiceAccount, which represents the identity of the app running in the pod. ServiceAccount usernames are formatted like this:
+```
+system:serviceaccount:<namespace>:<service account name>
+```
+The API server passes this username to the configured authorization plugins, which determine whether the action the app is trying to perform is allowed to be performed by the ServiceAccount.
+
+A default ServiceAccount is automatically created for each namespace. Each pod is associated with exactly one ServiceAccount, but multiple pods can use the same ServiceAccount, a pod can only use a ServiceAccount from the same namespace.
+
+### 12.1.3. Creating ServiceAccounts
+
+### 12.1.4 Assigning a ServiceAccount to a pod
+
+以上两个section的具体语法和demo见书本
+
+## 12.2. Securing the cluster with role-based access control
+
+RBAC prevents unauthorized users from viewing or modifying the cluster state. The default ServiceAccount isn’t allowed to view cluster state, let alone modify it in any way, unless you grant it additional privileges
+
+### 12.2.1 Introducing the RBAC authorization plugin
+
+A subject (which may be a human, a ServiceAccount, or a group of users or ServiceAccounts) is associated with one or more roles and each role is allowed to perform certain verbs on certain resources
+
+### 12.2.2 Introducing RBAC resources
+
+RBAC authorization rules是通过两类四种resource来完成的
+- Roles and ClusterRoles: 指定在哪些资源上可以进行哪些操作(which verb)
+- RoleBindings and ClusterRoleBindings: Bind the above roles to specific users, groups or ServiceAccounts
+
+Roles define what can be done, while bindings define who can do it. Role and RoleBinding are namespaced resources, whereas the ClusterRole and ClusterRoleBinding are cluster-level resources (not namespaced)
+
+![Roles and RoleBindings are namespaced; ClusterRoles and ClusterRoleBindings aren’t)](../assets/images/2022-10-09-kubernetes-in-action-notes-12-2-2-1.png)
+
+### 12.2.3. Using Roles and RoleBindings
+
+A Role resource defines what actions can be taken on which resources
+
+具体语法和例子见书本
+
+### 12.2.4 Using ClusterRoles and ClusterRoleBindings
+
+To grant access to cluster-level resources, you must always use a ClusterRoleBinding
+
+We’ve mentioned that the API server also exposes non-resource URLs. Access to these URLs must also be granted explicitly; otherwise the API server will reject the client’s request
+
+ClusterRoles don’t always need to be bound with cluster-level ClusterRoleBindings. They can also be bound with regular, namespaced RoleBindings. If you create a ClusterRoleBinding and reference the ClusterRole in it, the subjects listed in the binding can view the specified resources across all namespaces. If, on the other hand, you create a RoleBinding, the subjects listed in the binding can only view resources in the namespace of the RoleBinding
+
+Combining a ClusterRoleBinding with a ClusterRole referring to namespaced resources allows the pod to access namespaced resources in any namespace
+
+![When to use specific combinations of role and binding types](../assets/images/2022-10-09-kubernetes-in-action-notes-12-2-4-1.png)
+
+
+### 12.2.5 Understanding default ClusterRoles and ClusterRoleBindings
+
+Kubernetes提供了一些默认的ClusterRoles和ClusterRoleBindings, 我们可以通过组合现有的资源给pod提供read-only/modifying/full control等权限
+
+ClusterRoles starting with `system:` prefix are meant to be used by the various Kubernetes components
+
+### 12.2.6. are meant to be used by the various Kubernetes components
+
+Use `principle of least privilege)
+
+- Creating specific ServiceAccounts for each pod
+- Expecting your apps to be compromised
