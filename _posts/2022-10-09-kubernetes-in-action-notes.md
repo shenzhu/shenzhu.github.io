@@ -1391,3 +1391,28 @@ Use `principle of least privilege)
 
 - Creating specific ServiceAccounts for each pod
 - Expecting your apps to be compromised
+
+# 18. Extending Kubernetes
+
+## 18.1. Defining custom API objects
+
+A custom controller will observe those high-level objects and create low-level objects based on them 
+
+### 18.1.1. 18.1.1 Introducing CustomResourceDefinitions
+
+To define a new resource type, all you need to do is post a CustomResourceDefinition object (CRD) to the Kubernetes API server. Each CRD will usually also have an associated controller (an active component doing something based on the custom objects), the same way that all the core Kubernetes resources have an associated controller
+
+### 18.1.2 Automating custom resources with custom controllers
+
+We need to build and deploy a controller for CRD, which will watch the API server for the creationg of cutomized objects and then create low-level resources
+
+Immediately upon startup, the controller starts to watch Website objects by requesting the following URL
+```
+http://localhost:8001/apis/extensions.example.com/v1/websites?watch=true
+```
+
+The API server sends the `ADDED` watch event every time a new Website object is created. When the controller receives such an event, it extracts the Website’s name and the URL of the Git repository from the Website object it received in the watch event and creates a Deployment and a Service object by posting their JSON manifests to the API server
+
+The API server also sends a DELETED watch event when a Website resource instance is deleted
+
+现在似乎是要使用operator pattern
