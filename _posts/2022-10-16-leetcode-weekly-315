@@ -1,0 +1,266 @@
+---
+title: "LeetCode Weekly Contest 314-315"
+tags:
+  - LeetCode
+  - 算法
+---
+
+## Weekly 314
+
+### 2432. The Employee That Worked on the Longest Task
+
+```
+There are n employees, each with a unique id from 0 to n - 1.
+
+You are given a 2D integer array logs where logs[i] = [idi, leaveTimei] where:
+
+- idi is the id of the employee that worked on the ith task, and
+- leaveTimei is the time at which the employee finished the ith task. All the values leaveTimei are unique.
+
+Note that the ith task starts the moment right after the (i - 1)th task ends, and the 0th task starts at time 0.
+
+Return the id of the employee that worked the task with the longest time. If there is a tie between two or more employees, return the smallest id among them.
+```
+
+虽然题目比较长，但是逻辑简单，算是签到题
+
+```python
+class Solution:
+    def hardestWorker(self, n: int, logs: List[List[int]]) -> int:
+        counter = Counter()
+        
+        for i in range(len(logs)):
+            user_id, leave_time = logs[i]
+            if i == 0:
+                counter[user_id] = max(counter[user_id], leave_time)
+            else:
+                counter[user_id] = max(counter[user_id], leave_time - logs[i - 1][1])
+        
+        res = -1
+        max_time = 0
+                
+        for key, val in counter.items():
+            if val > max_time or (val == max_time and key < res):
+                res = key
+                max_time = val
+        
+        return res
+```
+
+### 2433. Find The Original Array of Prefix Xor
+```
+You are given an integer array pref of size n. Find and return the array arr of size n that satisfies:
+
+- pref[i] = arr[0] ^ arr[1] ^ ... ^ arr[i].
+Note that ^ denotes the bitwise-xor operation.
+
+It can be proven that the answer is unique.
+```
+
+这道题目给出了前缀和，让我们求原数组，可以使用差分进行计算
+```python
+class Solution:
+    def findArray(self, pref: List[int]) -> List[int]:
+        n = len(pref)
+        
+        res = [0 for _ in range(n)]
+        res[0] = pref[0]
+        
+        for i in range(1, n):
+            res[i] = pref[i] ^ pref[i - 1]
+        
+        return res
+```
+
+### 2434. Using a Robot to Print the Lexicographically Smallest String
+```
+You are given a string s and a robot that currently holds an empty string t. Apply one of the following operations until s and t are both empty:
+
+- Remove the first character of a string s and give it to the robot. The robot will append this character to the string t.
+- Remove the last character of a string t and give it to the robot. The robot will write this character on paper.
+
+Return the lexicographically smallest string that can be written on the paper.
+```
+
+这道题目出得非常好，首先经过观察我们可以注意到t的作用其实相当于一个栈，那么这道题目的本质就是把给定string中的character逐渐加入栈中，同时可以在任意时刻出栈，在这种情况下构造一个字典序最小的字符串
+
+由上面的分析可知，重点就是什么时候出栈，一开始可能会想到，在某个char即将入栈的时候，把栈里所有的小于它的char都弹出，但这种方法是错的. 参考给出的例子"bdda"，如果我们按照上面方法进行，那么结果就是"badd"，其实答案应该是"addb". 所以上面我们讨论的出栈条件是错误的，正确的出栈条件是，把小于等于还没加入栈中的最小元素的栈顶弹出，代码如下
+```python
+class Solution:
+    def findMinChar(self, counter):
+        for i in range(26):
+            ch = chr(ord('a') + i)
+            if counter[ch] > 0:
+                return ch
+        
+        return 'a'
+
+    def robotWithString(self, s: str) -> str:
+        stack = []
+        res = []
+        
+        counter = Counter(s)
+        for ch in s:
+            while stack and stack[-1] <= self.findMinChar(counter):
+                res.append(stack.pop())
+            stack.append(ch)
+            counter[ch] -= 1
+        
+        while stack:
+            res.append(stack.pop())
+        
+        return "".join(res)
+```
+
+### 2435. Paths in Matrix Whose Sum Is Divisible by K
+```
+You are given a 0-indexed m x n integer matrix grid and an integer k. You are currently at position (0, 0) and you want to reach position (m - 1, n - 1) moving only down or right.
+
+Return the number of paths where the sum of the elements on the path is divisible by k. Since the answer may be very large, return it modulo 109 + 7.
+```
+
+看到题目中需要数数，大概率想到要用DP来做，另外使用第三维度记录余数，非常巧妙
+```python
+class Solution:
+    def numberOfPaths(self, grid: List[List[int]], k: int) -> int:
+        n, m = len(grid), len(grid[0])
+        
+        MOD = pow(10, 9) + 7
+        
+        dp = [
+            [[0 for _ in range(k)] for _ in range(m + 1)]
+            for _ in range(n + 1)
+        ]
+        dp[1][1][grid[0][0] % k] = 1
+        
+        for i in range(1, n + 1):
+            for j in range(1, m + 1):
+                if i == 1 and j == 1:
+                    continue
+                
+                for r in range(k):
+                    dp[i][j][(r + grid[i - 1][j - 1]) % k] = (dp[i - 1][j][r] + dp[i][j - 1][r]) % MOD
+        
+        return dp[n][m][0]
+```
+
+## Weekly 315
+
+### 2441. Largest Positive Integer That Exists With Its Negative
+
+```
+Given an integer array nums that does not contain any zeros, find the largest positive integer k such that -k also exists in the array.
+
+Return the positive integer k. If there is no such integer, return -1.
+```
+
+签到题目，不多说
+```python
+class Solution:
+    def findMaxK(self, nums: List[int]) -> int:
+        if not nums:
+            return -1
+
+        counter = Counter(nums)
+        
+        res = float("-inf")
+        for num in nums:
+            if num > res and counter[-num] > 0:
+                res = num
+        
+        if res == float("-inf"):
+            return -1
+        
+        return res
+```
+
+### 2442. Count Number of Distinct Integers After Reverse Operations
+
+```
+You are given an array nums consisting of positive integers.
+
+You have to take each integer in the array, reverse its digits, and add it to the end of the array. You should apply this operation to the original integers in nums.
+
+Return the number of distinct integers in the final array.
+```
+
+签到题目，不多说
+```python
+class Solution:
+    def countDistinctIntegers(self, nums: List[int]) -> int:
+        uniques = set()
+        for num in nums:
+            num_str = str(num)
+            uniques.add(num)
+            # use int to account for starting with 0
+            uniques.add(int(num_str[::-1]))
+        
+        return len(uniques)
+```
+
+### 2443. Sum of Number and Its Reverse
+
+```
+Given a non-negative integer num, return true if num can be expressed as the sum of any non-negative integer and its reverse, or false otherwise.
+```
+一开始考虑是不是有一些巧妙的算法，结果后来发现是暴力...
+```python
+class Solution:
+    def sumOfNumberAndReverse(self, num: int) -> bool:
+        if num == 0:
+            return True
+
+        for i in range(num):
+            num1 = str(i)
+            num2 = num1[::-1]
+            
+            if int(num1) + int(num2) == num:
+                return True
+        
+        return False
+```
+
+### 2444. Count Subarrays With Fixed Bounds
+
+```
+You are given an integer array nums and two integers minK and maxK.
+
+A fixed-bound subarray of nums is a subarray that satisfies the following conditions:
+
+The minimum value in the subarray is equal to minK.
+The maximum value in the subarray is equal to maxK.
+Return the number of fixed-bound subarrays.
+
+A subarray is a contiguous part of an array.
+```
+
+一开始想的是sliding window，但是不太好做，后来看了别人的讲解发现很巧妙。首先我们思考，对于目标subarray，所有元素的值必须在minK，maxK之间，因此可以根据不在minK和maxK之间的数据把整个数组分成不同的部分
+
+在每一个部分中使用双指针算法，右侧指针不断向前运动，左侧维护两个指针minK和maxK的index，那么从这段数组开始到min(minK, maxK)的数据都可以作为满足条件数组的左侧端点
+```python
+class Solution:
+    def countSubarrays(self, nums: List[int], minK: int, maxK: int) -> int:
+        if not nums:
+            return 0
+        
+        last = -1
+        min_idx = -1
+        max_idx = -1
+        
+        count = 0
+        for i in range(len(nums)):
+            if nums[i] < minK or nums[i] > maxK:
+                last = i
+                continue
+            
+            if nums[i] == minK:
+                min_idx = i
+            
+            if nums[i] == maxK:
+                max_idx = i
+            
+            if min(min_idx, max_idx) > last:
+                count += min(min_idx, max_idx) - last
+        
+        return count
+```
