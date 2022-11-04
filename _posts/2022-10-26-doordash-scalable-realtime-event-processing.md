@@ -4,6 +4,7 @@ tags:
   - 分布式系统
   - 数据系统
   - 业界实践
+  - Event System
 ---
 
 这篇笔记来自于[DoorDash Engineering blog](https://doordash.engineering/2022/08/02/building-scalable-real-time-event-processing-with-kafka-and-flink/)
