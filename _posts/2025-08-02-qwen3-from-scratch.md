@@ -122,7 +122,7 @@ def apply_rotary_pos_emb(x, sin, cos):
 ### 2.3. Grouped Query Attention(GQA)
 在论文`Attention Is All You Need`中，作者提出了原始的`MultiHeadAttention`，即利用多组不同的Query, Key和Value矩阵来计算注意力，最后将来自不同组的结果stack起来得到最终的输出。之后的GPT2等模型也都使用了`MultiHeadAttention`。
 
-`GroupedQueryAttention`是对原始`MultiHeadAttention`的一种改进，在计算注意力时，将Query, Key和Value矩阵分成多组，每组使用不同的Query, Key和Value矩阵来计算注意力，和`MultiHeadAttention`相比，`GroupedQueryAttention`同一个group中的head可以共享Key和Value矩阵，从而减少总体的计算量。
+`GroupedQueryAttention`是对原始`MultiHeadAttention`的一种改进，在计算注意力时，将Key和Value矩阵分成多组，每组使用不同的Key和Value矩阵来计算注意力，和`MultiHeadAttention`相比，`GroupedQueryAttention`同一个group中的head可以共享Key和Value矩阵，从而减少总体的计算量。
 
 ```python
 import torch
