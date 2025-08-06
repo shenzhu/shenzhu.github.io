@@ -3,6 +3,7 @@ title: "nano-vllm源码阅读 1: Sequence"
 tags:
    - 大模型
    - Large Language Model
+   - AI Infra
 ---
 
 最近在学习 AI Infra 相关的知识并根据一些教程阅读nano-vllm的源代码，这里记录一下相关内容，我们从`Sequence`开始，因为在源码中它的dependency比较少，而且代表了用户的每一个请求
